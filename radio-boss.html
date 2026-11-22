@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RADIO BOSS WEB</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;color:#fff;font-family:Arial}
+header{background:#1a1a1a;padding:12px;display:flex;justify-content:space-between;border-bottom:3px solid #ff6600}
+.logo{font-size:20px;font-weight:900;color:#ff6600}
+.live{padding:6px 14px;border-radius:20px;background:#333;font-weight:bold}
+.live.on{background:#f00}
+.main{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+@media(max-width:700px){.main{grid-template-columns:1fr}}
+.box{background:#222;border-radius:10px;padding:14px}
+.box h3{color:#ff6600;margin-bottom:10px}
+label{font-size:12px;color:#aaa;display:block;margin-top:8px}
+input,select{width:100%;padding:10px;background:#111;color:#fff;border:1px solid #444;border-radius:6px;margin-top:3px}
+button{padding:12px;border:none;border-radius:8px;font-weight:bold;cursor:pointer}
+.btn-orange{background:#ff6600;color:#fff;width:100%;margin-top:10px}
+.btn-green{background:#00aa00;color:#fff}
+.btn-gray{background:#444;color:#fff}
+.btn-red{background:#c00;color:#fff}
+audio{width:100%;margin-top:10px}
+#log{background:#000;padding:10px;font-size:12px;height:110px;overflow:auto;color:#0f0;border-radius:8px}
+.item{padding:9px;border-bottom:1px solid #333;cursor:pointer}
+.item.activa{background:#ff6600}
+</style>
+</head>
+<body>
+<header><div class="logo">🎙️ RADIO BOSS WEB</div><div class="live" id="liveBadge">● OFFLINE</div></header>
+<div class="main">
+<div class="box">
+<h3>📡 ENCODER - IceCast</h3>
+<label>Tipo</label><select id="tipo"><option value="icecast" selected>IceCast</option><option value="shoutcast">SHOUTcast</option></select>
+<label>Servidor / Host</label><input id="host" placeholder="ej: s1.streampanel.com">
+<label>Puerto</label><input id="puerto" value="8688" type="number">
+<label>Contraseña</label><input id="pass" type="password" value="sp68k42cveicammr4g">
+<label>Mountpoint</label><input id="mount" value="/stream">
+<label>Usuario</label><input id="user" value="source">
+<label>URL del Puente / Relay (Render)</label><input id="relay" placeholder="wss://tu-relay.onrender.com">
+<label>Calidad</label><select id="calidad"><option value="128" selected>MP3 - 128 kbps</option><option value="96">MP3 - 96 kbps</option><option value="192">MP3 - 192 kbps</option></select>
+<button class="btn-orange" onclick="conectar()">🔴 CONECTAR Y TRANSMITIR</button>
+<button class="btn-gray" onclick="desconectar()" style="width:100%;margin-top:6px">⏹️ DESCONECTAR</button>
+<div id="log" style="margin-top:10px">✅ Configurado: 8688 | /stream | 128 kbps<br>Listo...</div>
+</div>
+<div class="box">
+<h3>🎛️ CABINA DJ</h3>
+<div id="ahora" style="font-weight:bold">🎵 Sin canción</div>
+<div id="siguiente" style="color:#aaa;font-size:12px"></div>
+<audio id="player" controls></audio>
+<div style="display:flex;gap:6px;margin-top:10px">
+<button class="btn-green" onclick="play()">▶️ PLAY</button>
+<button class="btn-gray" onclick="pausa()">⏸️ PAUSA</button>
+<button class="btn-gray" onclick="siguiente()">⏭️ SIG.</button>
+<button class="btn-red" onclick="toggleMic()" id="btnMic">🎤 MIC OFF</button>
+</div>
+<label style="margin-top:12px">🔊 ID cada X canciones</label>
+<div style="display:flex;gap:6px"><input type="number" id="cadaID" value="3" style="width:80px"><input id="idFile" type="file" accept="audio/*"></div>
+<label><input type="checkbox" id="autoDJ" checked> AutoDJ ON</label>
+<div style="margin-top:10px">🎵 Volumen: <input type="range" id="volMusica" min="0" max="100" value="80"></div>
+</div>
+<div class="box">
+<h3>📋 PLAYLIST</h3>
+<input type="file" id="files" accept="audio/*" multiple>
+<button class="btn-gray" onclick="document.getElementById('files').click()" style="width:100%;margin-top:6px">+ AGREGAR MÚSICA</button>
+<div style="margin-top:8px;display:flex;gap:6px"><button class="btn-gray" onclick="mezclar()" style="flex:1">🔀 MEZCLAR</button><button class="btn-gray" onclick="limpiar()" style="flex:1">🗑️ LIMPIAR</button></div>
+<div id="lista" style="margin-top:8px"></div>
+</div>
+<div class="box">
+<h3>⚙️ CÓMO SALIR AL AIRE</h3>
+<p style="font-size:13px;line-height:1.6;color:#ccc"><b>1.</b> Poné tu <b>Host</b><br><b>2.</b> Agregá música<br><b>3.</b> Dale <b>CONECTAR Y TRANSMITIR</b><br><b>4.</b> Dale <b>PLAY</b><br><br><b>Sin Relay:</b> Usá BUTT con Host: tu host | Puerto: <b>8688</b> | Mount: <b>/stream</b></p>
+</div>
+</div>
+<script>
+let canciones=[], indice=0, contador=0, ws=null, rec=null, ctx=null, micStream=null, micOn=false, idUrl=null;
+const player=document.getElementById('player'); const logEl=document.getElementById('log');
+function log(t){ logEl.innerHTML+="<br>"+t; }
+document.getElementById('files').addEventListener('change', e=>{ [...e.target.files].forEach(f=>canciones.push({nombre:f.name, url:URL.createObjectURL(f)})); mostrar(); log("✅ "+e.target.files.length+" canciones"); });
+document.getElementById('idFile').addEventListener('change', e=>{ if(e.target.files[0]) idUrl=URL.createObjectURL(e.target.files[0]); });
+function mostrar(){ document.getElementById('lista').innerHTML=canciones.map((c,i)=>`<div class="item ${i===indice?'activa':''}" onclick="tocarIndice(${i})">${i+1}. ${c.nombre}</div>`).join('')||"Sin canciones"; }
+function tocarIndice(i){ indice=i; contador=0; tocar(); }
+function tocar(){ if(!canciones.length) return; let cada=parseInt(document.getElementById('cadaID').value||3); if(contador>=cada && idUrl){ document.getElementById('ahora').innerText="🔊 ID / JINGLE"; player.src=idUrl; player.play(); return; } let c=canciones[indice]; document.getElementById('ahora').innerText="🎵 "+c.nombre; document.getElementById('siguiente').innerText="Siguiente: "+(canciones[(indice+1)%canciones.length]?.nombre||""); player.src=c.url; player.play(); mostrar(); }
+function play(){ if(canciones.length) tocar(); else alert("Agregá música primero"); }
+function pausa(){ player.pause(); }
+function siguiente(){ contador++; if(contador<parseInt(document.getElementById('cadaID').value||3)) indice=(indice+1)%canciones.length; tocar(); }
+player.onended=()=>{ let cada=parseInt(document.getElementById('cadaID').value||3); if(player.src===idUrl){ contador=0; tocar(); return; } contador++; if(document.getElementById('autoDJ').checked){ if(contador<cada) indice=(indice+1)%canciones.length; tocar(); } };
+document.getElementById('volMusica').addEventListener('input', e=>{ player.volume=e.target.value/100; });
+async function toggleMic(){ if(!micOn){ try{ micStream=await navigator.mediaDevices.getUserMedia({audio:true}); micOn=true; document.getElementById('btnMic').innerText="🎤 MIC ON"; }catch(e){ alert("Permitite el micrófono"); } } else { micOn=false; if(micStream) micStream.getTracks().forEach(t=>t.stop()); document.getElementById('btnMic').innerText="🎤 MIC OFF"; } }
+function mezclar(){ canciones.sort(()=>Math.random()-0.5); mostrar(); }
+function limpiar(){ canciones=[]; indice=0; mostrar(); }
+function conectar(){
+  let host=document.getElementById('host').value.trim(); let puerto=document.getElementById('puerto').value.trim(); let relay=document.getElementById('relay').value.trim();
+  if(!host||!puerto){ alert("Poné tu Host"); return; }
+  if(!relay){ log("⚠️ Sin relay: Usá BUTT con Host:"+host+" Puerto:8688 Mount:/stream"); document.getElementById('liveBadge').innerText="● CABINA - USA BUTT"; document.getElementById('liveBadge').classList.add('on'); return; }
+  let tipo=document.getElementById('tipo').value; let pass=document.getElementById('pass').value; let mount=document.getElementById('mount').value; let user=document.getElementById('user').value; let calidad=document.getElementById('calidad').value;
+  ws=new WebSocket(relay);
+  ws.onopen=()=>{ ws.send(JSON.stringify({type:"config", serverType:tipo, host, port:parseInt(puerto), password:pass, mount, user, bitrate:parseInt(calidad)})); log("📡 Conectado... Enviando a "+host+":"+puerto+" "+mount); document.getElementById('liveBadge').innerText="● EN VIVO"; document.getElementById('liveBadge').classList.add('on'); ctx=new (window.AudioContext||window.webkitAudioContext)(); let src=ctx.createMediaElementSource(player); let dest=ctx.createMediaStreamDestination(); src.connect(dest); src.connect(ctx.destination); rec=new MediaRecorder(dest.stream,{mimeType:'audio/webm;codecs=opus'}); rec.ondataavailable=e=>{ if(ws.readyState===1 && e.data.size>0) e.data.arrayBuffer().then(b=>ws.send(b)); }; rec.start(400); if(canciones.length) tocar(); };
+  ws.onmessage=e=>{ log("Relay: "+e.data); };
+  ws.onclose=()=>{ log("Desconectado"); document.getElementById('liveBadge').innerText="● OFFLINE"; };
+}
+function desconectar(){ if(rec) rec.stop(); if(ws) ws.close(); document.getElementById('liveBadge').innerText="● OFFLINE"; log("⏹️ Desconectado"); }
+mostrar();
+</script>
+</body>
+</html>
